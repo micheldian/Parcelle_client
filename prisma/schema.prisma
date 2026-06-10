@@ -1,0 +1,138 @@
+// =============================================================
+// Schéma Prisma — Plateforme parcelles cadastrales + dispatch
+// Géométrie stockée en GeoJSON (colonne Json) : pas de PostGIS.
+// Le filtrage carte se fait par centroïde (index B-tree lat/lng).
+// =============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ===== Clients (vignerons, arboriculteurs, maraîchers...) =====
+model Client {
+  id         String     @id @default(cuid())
+  nom        String     @unique // dédoublonnage à l'import
+  contactNom String?
+  telephone  String?
+  email      String?
+  notes      String?
+  couleur    String     @default("#FF5722") // couleur d'affichage carte
+  parcelles  Parcelle[]
+  createdAt  DateTime   @default(now())
+}
+
+// ===== Parcelles cadastrales =====
+model Parcelle {
+  id          String             @id @default(cuid())
+  client      Client             @relation(fields: [clientId], references: [id], onDelete: Cascade)
+  clientId    String
+  codeInsee   String
+  commune     String
+  section     String
+  numero      String
+  geometry    Json // GeoJSON MultiPolygon
+  centroidLat Float
+  centroidLng Float
+  surfaceM2   Float? // contenance IGN
+  cepage      String?
+  millesime   Int?
+  notes       String?
+  source      ParcelleSource     @default(MANUEL)
+  chantiers   ChantierParcelle[]
+  createdAt   DateTime           @default(now())
+
+  @@unique([codeInsee, section, numero, clientId]) // anti-doublon
+  @@index([centroidLat, centroidLng])
+}
+
+// ===== Chantiers (interventions de main d'œuvre) =====
+model Chantier {
+  id          String             @id @default(cuid())
+  titre       String
+  typeTravail TypeTravail
+  datePrevue  DateTime?
+  equipe      String?
+  statut      StatutChantier     @default(A_FAIRE)
+  consignes   String?
+  parcelles   ChantierParcelle[]
+  createdAt   DateTime           @default(now())
+}
+
+// Table de liaison chantier <-> parcelles
+model ChantierParcelle {
+  chantier   Chantier @relation(fields: [chantierId], references: [id], onDelete: Cascade)
+  chantierId String
+  parcelle   Parcelle @relation(fields: [parcelleId], references: [id], onDelete: Cascade)
+  parcelleId String
+
+  @@id([chantierId, parcelleId])
+}
+
+// ===== Import de fichier (traitement par lots résumable) =====
+model ImportBatch {
+  id                String       @id @default(cuid())
+  nomFichier        String
+  statut            ImportStatut @default(EN_ATTENTE)
+  totalLignes       Int          @default(0)
+  lignesTraitees    Int          @default(0)
+  clientsCrees      Int          @default(0)
+  parcellesCreees   Int          @default(0)
+  parcellesIgnorees Int          @default(0)
+  erreurs           Json? // [{ligne, raison, donnees}]
+  mapping           Json? // correspondance colonnes -> champs
+  payload           Json? // lignes parsées en attente de traitement
+  createdAt         DateTime     @default(now())
+}
+
+enum ParcelleSource {
+  MANUEL
+  IMPORT_REFERENCE
+  IMPORT_POINT
+  IMPORT_GEOMETRIE
+}
+
+enum ImportStatut {
+  EN_ATTENTE
+  EN_COURS
+  TERMINE
+  ECHEC
+}
+
+enum TypeTravail {
+  TAILLE
+  TIRAGE_BOIS
+  PALISSAGE
+  EBOURGEONNAGE
+  RELEVAGE
+  EFFEUILLAGE
+  VENDANGE
+  TRAITEMENT
+  PLANTATION
+  AUTRE
+}
+
+enum StatutChantier {
+  A_FAIRE
+  ENVOYE
+  EN_COURS
+  TERMINE
+}
+
+// ===== Utilisateurs internes =====
+model User {
+  id       String @id @default(cuid())
+  email    String @unique
+  password String // hash bcrypt
+  role     Role   @default(OPERATEUR)
+}
+
+enum Role {
+  ADMIN
+  OPERATEUR
+}
