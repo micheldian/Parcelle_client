@@ -1,203 +1,146 @@
-# 🚀 Guide pas-à-pas — Tester en local & mettre en production
+# 🚀 Mise en production — sans aucune ligne de commande
 
-Ce guide suppose que vous partez de zéro. Comptez **~20 min** pour le test local
-et **~20 min** pour la mise en production.
+Tout se fait **dans le navigateur**, en cliquant. Comptez **~15 minutes**.
+Vous aurez besoin de : votre compte GitHub (le code y est déjà), un compte
+Supabase (gratuit) et un compte Vercel (gratuit).
 
----
-
-# PARTIE 1 — Tester sur votre machine
-
-## Étape 0 — Prérequis (une seule fois)
-
-1. **Node.js 20 ou plus** : téléchargez sur <https://nodejs.org> (version LTS),
-   installez, puis vérifiez dans un terminal :
-   ```bash
-   node --version    # doit afficher v20.x ou v22.x
-   ```
-2. **Git** : <https://git-scm.com/downloads> (sur Mac : déjà présent en général).
-
-## Étape 1 — Récupérer le code
-
-```bash
-git clone https://github.com/micheldian/parcelle_client.git -b claude/agriconnect-parcelles-dispatch-6f4jfg
-cd parcelle_client
-npm install
-```
-
-## Étape 2 — Créer la base de données (Supabase, gratuit)
-
-> La même base servira ensuite en production : vous ne ferez ça qu'une fois.
-
-1. Allez sur <https://supabase.com> → **Start your project** → créez un compte.
-2. **New project** :
-   - *Name* : `agriconnect-parcelles`
-   - *Database Password* : choisissez un mot de passe fort et **notez-le**
-   - *Region* : **West EU (Paris)** ou Frankfurt
-3. Attendez ~2 min que le projet se crée.
-4. Cliquez sur le bouton **Connect** (en haut de la page du projet) → onglet
-   **ORMs** → sélectionnez **Prisma**. Supabase affiche deux URI :
-   - `DATABASE_URL` → celle avec le port **6543** (Transaction pooler)
-   - `DIRECT_URL` → celle avec le port **5432** (Direct connection)
-5. Copiez les deux (remplacez `[YOUR-PASSWORD]` par votre mot de passe).
-
-## Étape 3 — Configurer l'application
-
-```bash
-cp .env.example .env
-```
-
-Ouvrez le fichier `.env` et remplissez :
-
-```bash
-DATABASE_URL="postgresql://postgres.xxxx:VOTRE_MDP@aws-0-eu-west-3.pooler.supabase.com:6543/postgres?pgbouncer=true"
-DIRECT_URL="postgresql://postgres.xxxx:VOTRE_MDP@aws-0-eu-west-3.pooler.supabase.com:5432/postgres"
-
-NEXTAUTH_SECRET="collez-ici-le-résultat-de-la-commande-ci-dessous"
-NEXTAUTH_URL="http://localhost:3000"
-
-ADMIN_EMAIL="votre@email.fr"
-ADMIN_PASSWORD="un-mot-de-passe-solide"
-
-# Laissez vide pour l'instant (le dispatch affichera une erreur claire, c'est normal)
-TELEGRAM_BOT_TOKEN=""
-TELEGRAM_DISPATCH_CHAT_ID=""
-```
-
-Pour générer le secret NextAuth :
-
-```bash
-# Mac / Linux :
-openssl rand -base64 32
-# Windows (PowerShell) :
-[Convert]::ToBase64String((1..32 | ForEach-Object { Get-Random -Maximum 256 }))
-```
-
-## Étape 4 — Créer les tables et le compte admin
-
-```bash
-npx prisma migrate deploy   # crée toutes les tables dans Supabase
-npm run db:seed             # crée votre compte admin (ADMIN_EMAIL / ADMIN_PASSWORD)
-```
-
-Vous devez voir : `✔ Compte admin créé : votre@email.fr`.
-
-## Étape 5 — Lancer et tester
-
-```bash
-npm run dev
-```
-
-Ouvrez <http://localhost:3000> → connectez-vous avec `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
-
-### Parcours de test conseillé (10 min)
-
-1. **Clients** → « Nouveau client » → créez un client avec une couleur.
-2. **Carte** → « Par référence » → tapez une commune (ex. *Riquewihr*),
-   choisissez-la dans la liste, saisissez section + numéro (ex. `17` / `648`),
-   « Rechercher » → la parcelle s'affiche en jaune → rattachez-la au client →
-   « Enregistrer ».
-3. **Carte** → « Pointer » → cliquez sur une vigne sur la photo satellite →
-   la parcelle cadastrale intersectée est proposée → confirmez.
-4. **Import** → « Télécharger le modèle Excel » → ouvrez-le, ajoutez 3-4 lignes
-   avec vos vrais clients/communes → ré-uploadez-le → vérifiez le mapping
-   (pré-rempli) → « Aperçu » → « Lancer l'import » → regardez la progression
-   puis les parcelles apparaître sur la carte.
-   - Testez aussi avec **votre vrai fichier clients** : l'écran de mapping
-     accepte n'importe quels noms de colonnes.
-5. **Carte** → Ctrl+clic sur 2-3 parcelles (ou cases du panneau) →
-   « Créer un chantier ».
-6. **Chantiers** → votre chantier est dans la colonne « À faire ».
-   Le bouton « Envoyer » répondra *Telegram non configuré* tant que la
-   Partie 3 n'est pas faite — c'est attendu.
+> ℹ️ Le dépôt est déjà prêt : au premier déploiement, Vercel **crée tout seul
+> les tables de la base et votre compte administrateur**. Vous n'avez rien
+> d'autre à faire que remplir des formulaires web.
 
 ---
 
-# PARTIE 2 — Mettre en production (Vercel)
+## Étape 1 — Créer la base de données (Supabase) — 5 min
 
-> La base Supabase de la Partie 1 est déjà prête : il ne reste qu'à héberger l'app.
+1. Allez sur <https://supabase.com> → **Start your project** → créez un compte
+   (le plus simple : « Continue with GitHub »).
+2. Cliquez **New project** et remplissez :
+   - **Name** : `agriconnect-parcelles`
+   - **Database Password** : cliquez sur **Generate a password**, puis
+     **copiez-le dans un endroit sûr** (vous en aurez besoin à l'étape 2)
+   - **Region** : *West EU (Paris)*
+3. Cliquez **Create new project** et attendez ~2 minutes.
+4. Sur la page du projet, cliquez le bouton **Connect** (en haut) →
+   onglet **ORMs** → choisissez **Prisma** dans la liste.
+   Deux lignes s'affichent, gardez cette page ouverte :
+   - `DATABASE_URL` (l'adresse avec le port **6543**)
+   - `DIRECT_URL` (l'adresse avec le port **5432**)
 
-## Étape 1 — Pousser le code sur votre branche principale
+---
 
-Quand le test local vous convient, fusionnez la branche dans `main`
-(via une pull request GitHub, ou en ligne de commande) :
+## Étape 2 — Déployer l'application (Vercel) — 8 min
 
-```bash
-git checkout main || git checkout -b main
-git merge claude/agriconnect-parcelles-dispatch-6f4jfg
-git push -u origin main
-```
-
-## Étape 2 — Créer le projet Vercel
-
-1. Allez sur <https://vercel.com> → connectez-vous **avec votre compte GitHub**.
-2. **Add New… → Project** → importez le dépôt `parcelle_client`.
-3. Framework détecté : **Next.js** — ne changez rien aux réglages de build
-   (`npm run build` lance déjà `prisma generate`).
-4. **Avant de cliquer sur Deploy**, ouvrez la section **Environment Variables**
-   et ajoutez :
+1. Allez sur <https://vercel.com> → **Sign Up** → **Continue with GitHub**
+   (autorisez l'accès quand GitHub le demande).
+2. Cliquez **Add New… → Project** → dans la liste de vos dépôts GitHub,
+   trouvez **parcelle_client** → **Import**.
+   (S'il n'apparaît pas : bouton *Adjust GitHub App Permissions* → cochez le dépôt.)
+3. Sur l'écran de configuration :
+   - **Project Name** : `agriconnect-parcelles` ← retenez-le, votre site sera
+     `https://agriconnect-parcelles.vercel.app`
+   - **Framework Preset** : Next.js (détecté automatiquement — ne touchez à rien)
+4. Dépliez **Environment Variables** et ajoutez ces 7 lignes, une par une
+   (Nom → Valeur → bouton *Add*) :
 
    | Nom | Valeur |
    |---|---|
-   | `DATABASE_URL` | la même qu'en local (port **6543**, `?pgbouncer=true`) |
-   | `DIRECT_URL` | la même qu'en local (port **5432**) |
-   | `NEXTAUTH_SECRET` | **un NOUVEAU secret** (regénérez : `openssl rand -base64 32`) |
-   | `NEXTAUTH_URL` | laissez vide pour l'instant, on la mettra à l'étape 3 |
-   | `TELEGRAM_BOT_TOKEN` | voir Partie 3 (peut rester vide au début) |
-   | `TELEGRAM_DISPATCH_CHAT_ID` | voir Partie 3 (peut rester vide au début) |
+   | `DATABASE_URL` | collez la ligne `DATABASE_URL` de Supabase (port 6543) en remplaçant `[YOUR-PASSWORD]` par votre mot de passe |
+   | `DIRECT_URL` | collez la ligne `DIRECT_URL` de Supabase (port 5432), même remplacement |
+   | `NEXTAUTH_SECRET` | une longue phrase aléatoire (40+ caractères) — ou générez-en une sur <https://generate-secret.vercel.app/32> et collez |
+   | `NEXTAUTH_URL` | `https://agriconnect-parcelles.vercel.app` (l'URL correspondant au nom choisi au point 3) |
+   | `ADMIN_EMAIL` | votre email (ce sera votre identifiant de connexion) |
+   | `ADMIN_PASSWORD` | le mot de passe de connexion que vous voulez |
+   | `TELEGRAM_BOT_TOKEN` | laissez vide pour l'instant (voir étape 4) |
 
-5. Cliquez **Deploy** et attendez ~2 min.
-
-## Étape 3 — Finaliser l'URL
-
-1. Vercel vous donne une URL du type `https://parcelle-client.vercel.app`
-   (vous pourrez brancher un domaine perso plus tard dans *Settings → Domains*).
-2. Retournez dans *Settings → Environment Variables* → renseignez
-   `NEXTAUTH_URL` = `https://parcelle-client.vercel.app` (votre URL exacte).
-3. *Deployments* → menu `…` du dernier déploiement → **Redeploy**
-   (nécessaire pour prendre en compte la variable).
-
-## Étape 4 — Vérifier
-
-- Ouvrez votre URL → page de connexion → connectez-vous avec le compte admin
-  créé en Partie 1 (même base ⇒ même compte, et **vos données de test sont déjà là**).
-- Si vous préférez repartir d'une base propre : créez un second projet Supabase
-  « prod », répétez Partie 1 / Étapes 2 à 4 avec ses URI, et mettez celles-ci
-  dans Vercel.
-
-> **À chaque `git push` sur `main`, Vercel redéploie automatiquement.**
+5. Cliquez **Deploy**. Pendant les ~3 minutes de construction, Vercel :
+   crée les tables dans Supabase ✅ crée votre compte admin ✅ met le site en ligne ✅
+6. Quand « Congratulations » s'affiche, cliquez sur l'aperçu du site.
 
 ---
 
-# PARTIE 3 — Activer le dispatch Telegram (5 min)
+## Étape 3 — Premier login et premier import — 2 min
 
-1. Dans Telegram, ouvrez **@BotFather** → `/newbot` →
+1. Ouvrez `https://agriconnect-parcelles.vercel.app` → connectez-vous avec
+   `ADMIN_EMAIL` / `ADMIN_PASSWORD`.
+2. Menu **Import** → « Télécharger le modèle Excel » → remplissez quelques
+   lignes avec vos clients et leurs parcelles → ré-uploadez → vérifiez le
+   mapping (pré-rempli) → **Lancer l'import**.
+3. Menu **Carte** : vos parcelles sont là, colorées par client, sur la photo
+   satellite IGN. 🍇
+
+Vous pouvez directement importer **votre fichier clients existant** : l'écran
+de « mapping » vous laisse associer vos propres noms de colonnes aux champs
+attendus, aucun reformatage nécessaire.
+
+---
+
+## Étape 4 — Activer l'envoi Telegram à l'équipe — 5 min
+
+1. Dans Telegram, cherchez **@BotFather** → envoyez `/newbot` :
    - nom affiché : `Chantiers AGRICONNECT`
-   - identifiant : ex. `PickajobChantiers_bot`
-   - BotFather vous donne le **token** → c'est `TELEGRAM_BOT_TOKEN`.
-2. Créez un **groupe Telegram** « Chantiers » → ajoutez-y le bot **et** vos ouvriers.
-3. Envoyez n'importe quel message dans le groupe, puis ouvrez dans un navigateur :
+   - identifiant : par ex. `PickajobChantiers_bot`
+   - BotFather répond avec un **token** (longue chaîne avec `:`) → copiez-le.
+2. Créez un **groupe Telegram** « Chantiers » → ajoutez-y le bot et vos ouvriers.
+3. Envoyez n'importe quel message dans le groupe, puis ouvrez dans votre
+   navigateur (en remplaçant VOTRE_TOKEN) :
    ```
-   https://api.telegram.org/bot<VOTRE_TOKEN>/getUpdates
+   https://api.telegram.org/botVOTRE_TOKEN/getUpdates
    ```
-   Cherchez `"chat":{"id":-100xxxxxxxxxx` → ce nombre **négatif** est votre
-   `TELEGRAM_DISPATCH_CHAT_ID`.
-4. Renseignez les deux variables :
-   - en local : dans `.env` (puis relancez `npm run dev`) ;
-   - en prod : dans Vercel *Settings → Environment Variables* (puis **Redeploy**).
-5. Test : ouvrez un chantier → « Envoyer » → le groupe reçoit le récap
-   **+ une position GPS cliquable par parcelle** (itinéraire en un tap),
-   et le chantier passe en « Envoyé ».
+   Cherchez `"chat":{"id":-100…` → ce **nombre négatif** est l'identifiant du groupe.
+4. Dans Vercel : votre projet → **Settings → Environment Variables** :
+   - `TELEGRAM_BOT_TOKEN` = le token de BotFather
+   - `TELEGRAM_DISPATCH_CHAT_ID` = le nombre négatif
+5. Onglet **Deployments** → menu **⋯** du déploiement le plus récent →
+   **Redeploy** (pour prendre en compte les variables).
+6. Test : ouvrez un chantier → **Envoyer** → le groupe reçoit le récap et une
+   **position GPS cliquable par parcelle** (itinéraire en un tap).
 
 ---
 
-# En cas de problème
+## C'est tout ✅
 
-| Symptôme | Cause probable / solution |
+- **Votre site** : `https://agriconnect-parcelles.vercel.app` (vous pourrez
+  brancher un nom de domaine à vous plus tard : Vercel → Settings → Domains).
+- **Les mises à jour sont automatiques** : à chaque modification poussée sur
+  GitHub, Vercel reconstruit et republie le site, y compris les évolutions
+  de la base de données.
+- **Coût : 0 €** — Supabase gratuit (500 Mo, très large pour cet usage),
+  Vercel gratuit, fonds de carte IGN gratuits, Telegram gratuit.
+
+---
+
+## En cas de problème
+
+| Symptôme | Solution |
 |---|---|
-| `migrate deploy` échoue (connexion) | Vérifiez `DIRECT_URL` (port **5432**) et le mot de passe ; certains réseaux d'entreprise bloquent le port → essayez en 4G |
-| Login refusé | Relancez `npm run db:seed` ; vérifiez `ADMIN_EMAIL`/`ADMIN_PASSWORD` du `.env` |
-| Page blanche après login en prod | `NEXTAUTH_URL` absente ou incorrecte → corrigez puis Redeploy |
-| « Commune introuvable » à l'import | API Géo momentanément indisponible, ou orthographe : ajoutez la colonne `code_insee`, ré-importez le rapport d'erreurs corrigé |
-| « Parcelle inexistante côté IGN » | Vérifiez section/numéro sur <https://cadastre.gouv.fr> |
-| Dispatch : « Telegram non configuré » | Variables Telegram absentes → Partie 3 |
-| Import lent | Normal : ~20 lignes par lot, appels IGN limités à 5 simultanés par courtoisie ; laissez l'onglet ouvert (reprise possible via « Reprendre ») |
+| Le déploiement Vercel échoue avec une erreur `P1001` / `connect` | Le mot de passe dans `DATABASE_URL`/`DIRECT_URL` est faux ou `[YOUR-PASSWORD]` n'a pas été remplacé → corrigez dans Settings → Environment Variables, puis Redeploy |
+| « Identifiants incorrects » au login | Vérifiez `ADMIN_EMAIL`/`ADMIN_PASSWORD` dans Vercel. Le compte est créé **au premier déploiement** : si vous changez ces variables ensuite, le mot de passe initial reste valable (le compte n'est pas recréé) |
+| Redirection étrange après login | Vérifiez que `NEXTAUTH_URL` correspond exactement à l'adresse du site (avec `https://`, sans `/` final), puis Redeploy |
+| « Commune introuvable » à l'import | Faute de frappe ou API Géo momentanément indisponible → téléchargez le rapport d'erreurs, corrigez (ou ajoutez une colonne `code_insee`), ré-importez ce fichier |
+| « Parcelle inexistante côté IGN » | Vérifiez la référence sur <https://cadastre.gouv.fr> |
+| L'import semble lent | Normal : les géométries sont récupérées auprès de l'IGN par lots de 20 lignes. Laissez l'onglet ouvert ; en cas d'interruption, bouton « Reprendre » sur la page Import |
+| « Telegram non configuré » au dispatch | Étape 4 pas encore faite, ou Redeploy oublié après l'ajout des variables |
+
+---
+
+## Annexe — Tester sur votre machine avant (optionnel, nécessite un terminal)
+
+> Pas obligatoire : vous pouvez tout à fait tester directement en production.
+
+1. Installez Node.js LTS (<https://nodejs.org>) et Git (<https://git-scm.com>).
+2. Dans un terminal :
+   ```bash
+   git clone https://github.com/micheldian/parcelle_client.git
+   cd parcelle_client
+   npm install
+   cp .env.example .env
+   ```
+3. Ouvrez `.env` et remplissez les mêmes valeurs qu'à l'étape 2 ci-dessus
+   (avec `NEXTAUTH_URL="http://localhost:3000"`).
+4. Puis :
+   ```bash
+   npx prisma migrate deploy
+   npm run db:seed
+   npm run dev
+   ```
+5. Ouvrez <http://localhost:3000>.
