@@ -6,7 +6,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut, useSession } from "next-auth/react";
-import { Grape, Map, Users, Hammer, Upload, LogOut } from "lucide-react";
+import { Grape, Map, Users, Hammer, Upload, LogOut, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
@@ -17,9 +17,18 @@ const LIENS = [
   { href: "/import", libelle: "Import", icone: Upload },
 ];
 
+// Liens réservés aux administrateurs
+const LIENS_ADMIN = [
+  { href: "/utilisateurs", libelle: "Utilisateurs", icone: ShieldCheck },
+];
+
 export function Navbar() {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const estAdmin = (session?.user as { role?: string } | undefined)?.role === "ADMIN";
+
+  // Liens visibles selon le rôle
+  const liens = estAdmin ? [...LIENS, ...LIENS_ADMIN] : LIENS;
 
   // Pas de barre sur l'écran de connexion
   if (pathname === "/login") return null;
@@ -31,7 +40,7 @@ export function Navbar() {
         AGRICONNECT
       </Link>
       <nav className="flex flex-1 items-center gap-1">
-        {LIENS.map(({ href, libelle, icone: Icone }) => (
+        {liens.map(({ href, libelle, icone: Icone }) => (
           <Link
             key={href}
             href={href}
