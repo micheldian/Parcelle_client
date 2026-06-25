@@ -5,7 +5,7 @@
  * liste des parcelles visibles, sélection multiple, actions de saisie.
  */
 import { useState } from "react";
-import { ChevronLeft, ChevronRight, Crosshair, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Crosshair, Pencil, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -33,6 +33,8 @@ interface Props {
   onNouvelleParcelle: () => void;
   modePointage: boolean;
   onBasculerPointage: () => void;
+  modeDessin: boolean;
+  onBasculerDessin: () => void;
   onChantierDepuisSelection: () => void;
 }
 
@@ -48,6 +50,8 @@ export function PanneauLateral({
   onNouvelleParcelle,
   modePointage,
   onBasculerPointage,
+  modeDessin,
+  onBasculerDessin,
   onChantierDepuisSelection,
 }: Props) {
   const [replie, setReplie] = useState(false);
@@ -76,10 +80,10 @@ export function PanneauLateral({
             <ChevronLeft className="h-4 w-4 text-muted-foreground" />
           </button>
         </div>
+        <Button size="sm" className="w-full" onClick={onNouvelleParcelle}>
+          <Plus className="h-4 w-4" /> Ajouter par référence
+        </Button>
         <div className="flex gap-2">
-          <Button size="sm" className="flex-1" onClick={onNouvelleParcelle}>
-            <Plus className="h-4 w-4" /> Par référence
-          </Button>
           <Button
             size="sm"
             variant={modePointage ? "destructive" : "secondary"}
@@ -88,6 +92,15 @@ export function PanneauLateral({
           >
             <Crosshair className="h-4 w-4" />
             {modePointage ? "Annuler" : "Pointer"}
+          </Button>
+          <Button
+            size="sm"
+            variant={modeDessin ? "destructive" : "secondary"}
+            className="flex-1"
+            onClick={onBasculerDessin}
+          >
+            <Pencil className="h-4 w-4" />
+            {modeDessin ? "Annuler" : "Dessiner"}
           </Button>
         </div>
       </div>

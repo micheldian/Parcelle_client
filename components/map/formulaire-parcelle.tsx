@@ -23,8 +23,10 @@ interface Props {
   open: boolean;
   onClose: () => void;
   clients: ClientResume[];
-  /** Mode B : parcelles candidates issues du clic carte */
+  /** Mode B / C : parcelles candidates issues du clic carte ou du tracé */
   candidatsInitiaux: ParcelleCadastraleFeature[] | null;
+  /** true si les candidats proviennent d'un tracé manuel (libellés adaptés) */
+  estDessin?: boolean;
   /** Affiche la géométrie en surbrillance sur la carte (+ recentrage) */
   onApercu: (geom: GeoJSON.Geometry | null, centre?: { lat: number; lng: number }) => void;
   onSucces: () => void;
@@ -40,6 +42,7 @@ export function FormulaireParcelle({
   onClose,
   clients,
   candidatsInitiaux,
+  estDessin = false,
   onApercu,
   onSucces,
 }: Props) {
@@ -184,7 +187,11 @@ export function FormulaireParcelle({
   return (
     <Dialog open={open} onClose={onClose}>
       <DialogTitle>
-        {modePointage ? "Confirmer la parcelle pointée" : "Nouvelle parcelle par référence"}
+        {estDessin
+          ? "Confirmer la zone dessinée"
+          : modePointage
+            ? "Confirmer la parcelle pointée"
+            : "Nouvelle parcelle par référence"}
       </DialogTitle>
 
       <div className="space-y-4">

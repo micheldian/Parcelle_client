@@ -2,8 +2,8 @@
 
 /**
  * Écran principal « Carte » : orchestre la carte Leaflet, le panneau latéral,
- * la saisie manuelle de parcelles (Mode A référence / Mode B clic) et
- * l'ajout de parcelles à un chantier.
+ * la saisie manuelle de parcelles (Mode A référence, Mode B clic/cadastre,
+ * Mode C dessin libre) et l'ajout de parcelles à un chantier.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import dynamic from "next/dynamic";
@@ -12,6 +12,7 @@ import { PanneauLateral, type Filtres } from "./panneau-lateral";
 import { FormulaireParcelle } from "./formulaire-parcelle";
 import { DialogChantier } from "./dialog-chantier";
 import { DialogEditionParcelle } from "./dialog-edition-parcelle";
+import { calculerCentroide, calculerSurfaceM2 } from "@/lib/geo";
 import type { ParcelleCadastraleFeature, ParcelleCarte } from "@/types/geo";
 
 // La carte Leaflet ne peut être rendue que côté navigateur
@@ -48,6 +49,12 @@ export function PageCarte() {
   const [candidatsPointage, setCandidatsPointage] = useState<ParcelleCadastraleFeature[] | null>(null);
   const [apercu, setApercu] = useState<GeoJSON.Geometry | null>(null);
   const [recherchePointEnCours, setRecherchePointEnCours] = useState(false);
+  const [formEstDessin, setFormEstDessin] = useState(false);
+
+  // ---- Mode dessin (tracé manuel) ----
+  const [modeDessin, setModeDessin] = useState(false);
+  const [pointsDessin, setPointsDessin] = useState<[number, number][]>([]);
+  const [dessinEnCours, setDessinEnCours] = useState(false); // reverse cadastre en cours
 
   // ---- Chantier / édition ----
   const [parcellesPourChantier, setParcellesPourChantier] = useState<string[] | null>(null);
@@ -108,6 +115,20 @@ export function PageCarte() {
     });
   }
 
+  /** Active le mode pointage (et coupe le mode dessin). */
+  function basculerPointage() {
+    setModeDessin(false);
+    setPointsDessin([]);
+    setModePointage((m) => !m);
+  }
+
+  /** Active le mode dessin (et coupe le mode pointage). */
+  function basculerDessin() {
+    setModePointage(false);
+    setPointsDessin([]);
+    setModeDessin((m) => !m);
+  }
+
   /** Mode B : clic sur la carte → recherche de la parcelle intersectée (IGN). */
   async function clicCartePointage(lat: number, lng: number) {
     if (recherchePointEnCours) return;
@@ -120,6 +141,7 @@ export function PageCarte() {
         alert("Aucune parcelle cadastrale trouvée à cet endroit.");
         return;
       }
+      setFormEstDessin(false);
       setCandidatsPointage(features);
       setModePointage(false);
       setFormOuvert(true);
@@ -128,6 +150,78 @@ export function PageCarte() {
     } finally {
       setRecherchePointEnCours(false);
     }
+  }
+
+  /** Mode C : chaque clic ajoute un sommet au tracé. */
+  function clicCarteDessin(lat: number, lng: number) {
+    setPointsDessin((prec) => [...prec, [lat, lng]]);
+  }
+
+  /**
+   * Termine le tracé : construit le polygone GeoJSON, tente de récupérer la
+   * référence cadastrale (commune/section/numéro) au centre via l'IGN, puis
+   * ouvre le formulaire de rattachement avec la géométrie dessinée.
+   */
+  async function terminerDessin() {
+    if (pointsDessin.length < 3 || dessinEnCours) return;
+    setDessinEnCours(true);
+    try {
+      // GeoJSON Polygon : [lng, lat] + anneau fermé
+      const anneau = pointsDessin.map(([la, ln]) => [ln, la]);
+      anneau.push(anneau[0]);
+      const geometry: GeoJSON.Polygon = { type: "Polygon", coordinates: [anneau] };
+      const { lat, lng } = calculerCentroide(geometry);
+
+      // Reverse cadastre au centre (best effort, on garde le tracé dessiné)
+      let props: ParcelleCadastraleFeature["properties"] = {};
+      try {
+        const reponse = await fetch(`/api/cadastre?lat=${lat}&lng=${lng}`);
+        if (reponse.ok) {
+          const f = ((await reponse.json()).features ?? [])[0] as ParcelleCadastraleFeature | undefined;
+          if (f) props = f.properties;
+        }
+      } catch {
+        // tracé conservé même si l'IGN ne répond pas
+      }
+
+      // Pseudo-numéro stable basé sur le centre (anti-doublon quand pas de réf)
+      const pseudoNumero = `${Math.round(lat * 1e5).toString(36)}${Math.round(lng * 1e5).toString(36)}`.toUpperCase();
+      const codeInsee =
+        (props.code_insee as string) ||
+        `${props.code_dep ?? ""}${props.code_com ?? ""}` ||
+        "00000";
+
+      // Feature synthétique : géométrie = tracé, métadonnées = cadastre (si trouvé)
+      const synthetique: ParcelleCadastraleFeature = {
+        type: "Feature",
+        geometry,
+        properties: {
+          nom_com: (props.nom_com as string) || "Zone dessinée",
+          code_insee: codeInsee,
+          section: (props.section as string) || "GE",
+          numero: (props.numero as string) || pseudoNumero,
+          // Surface du tracé réel (pas la contenance cadastrale)
+          contenance: calculerSurfaceM2(geometry) ?? undefined,
+        },
+      };
+
+      setFormEstDessin(true);
+      setCandidatsPointage([synthetique]);
+      setModeDessin(false);
+      setPointsDessin([]);
+      setFormOuvert(true);
+    } finally {
+      setDessinEnCours(false);
+    }
+  }
+
+  function annulerDernierPoint() {
+    setPointsDessin((prec) => prec.slice(0, -1));
+  }
+
+  function annulerDessin() {
+    setPointsDessin([]);
+    setModeDessin(false);
   }
 
   /** Suppression d'une parcelle (avec confirmation). */
@@ -143,6 +237,7 @@ export function PageCarte() {
     setFormOuvert(false);
     setCandidatsPointage(null);
     setApercu(null);
+    setFormEstDessin(false);
   }
 
   return (
@@ -160,9 +255,14 @@ export function PageCarte() {
           setFocus({ lat: p.centroidLat, lng: p.centroidLng });
           setParcelleActive(p);
         }}
-        onNouvelleParcelle={() => setFormOuvert(true)}
+        onNouvelleParcelle={() => {
+          setFormEstDessin(false);
+          setFormOuvert(true);
+        }}
         modePointage={modePointage}
-        onBasculerPointage={() => setModePointage((m) => !m)}
+        onBasculerPointage={basculerPointage}
+        modeDessin={modeDessin}
+        onBasculerDessin={basculerDessin}
         onChantierDepuisSelection={() => setParcellesPourChantier(Array.from(selectionIds))}
       />
 
@@ -172,7 +272,33 @@ export function PageCarte() {
           <div className="absolute left-1/2 top-3 z-10 -translate-x-1/2 rounded-md bg-yellow-400 px-3 py-1.5 text-sm font-medium shadow">
             {recherchePointEnCours
               ? "Recherche de la parcelle…"
-              : "Cliquez sur une parcelle de la carte (Échap. : bouton « Annuler »)"}
+              : "Cliquez sur une parcelle (les limites cadastrales sont affichées)"}
+          </div>
+        )}
+        {modeDessin && (
+          <div className="absolute left-1/2 top-3 z-10 flex -translate-x-1/2 items-center gap-2 rounded-md bg-yellow-400 px-3 py-1.5 text-sm font-medium shadow">
+            <span>
+              {dessinEnCours
+                ? "Enregistrement du tracé…"
+                : `Cliquez les coins de la zone — ${pointsDessin.length} point(s)`}
+            </span>
+            <button
+              onClick={terminerDessin}
+              disabled={pointsDessin.length < 3 || dessinEnCours}
+              className="rounded bg-primary px-2 py-0.5 text-xs text-primary-foreground disabled:opacity-50"
+            >
+              Terminer
+            </button>
+            <button
+              onClick={annulerDernierPoint}
+              disabled={pointsDessin.length === 0}
+              className="rounded bg-white px-2 py-0.5 text-xs disabled:opacity-50"
+            >
+              Annuler le dernier
+            </button>
+            <button onClick={annulerDessin} className="rounded bg-white px-2 py-0.5 text-xs">
+              Annuler
+            </button>
           </div>
         )}
         <CarteParcelles
@@ -181,13 +307,15 @@ export function PageCarte() {
           parcelleActive={parcelleActive}
           apercu={apercu}
           modePointage={modePointage}
+          modeDessin={modeDessin}
+          pointsDessin={pointsDessin}
           focus={focus}
           onViewport={chargerParcelles}
           onClicParcelle={clicParcelle}
           onFermerPopup={() => setParcelleActive(null)}
           onClicCarte={clicCartePointage}
+          onClicCarteDessin={clicCarteDessin}
           onAjouterChantier={(p) => {
-            // Si une sélection multiple existe et inclut la parcelle, on l'utilise
             const ids = selectionIds.has(p.id) && selectionIds.size > 1
               ? Array.from(selectionIds)
               : [p.id];
@@ -198,12 +326,13 @@ export function PageCarte() {
         />
       </div>
 
-      {/* Saisie manuelle (Mode A référence / Mode B confirmation du pointage) */}
+      {/* Saisie manuelle (référence / pointage cadastre / tracé dessiné) */}
       <FormulaireParcelle
         open={formOuvert}
         onClose={fermerFormulaire}
         clients={clients}
         candidatsInitiaux={candidatsPointage}
+        estDessin={formEstDessin}
         onApercu={(geom, centre) => {
           setApercu(geom);
           if (centre) setFocus(centre);

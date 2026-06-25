@@ -3,7 +3,8 @@
 /**
  * Carte Leaflet : fonds IGN (satellite / plan / overlay cadastre),
  * polygones des parcelles colorés par client, bordure selon le statut
- * du dernier chantier, popup d'actions, mode "pointer une parcelle".
+ * du dernier chantier, popup d'actions, mode « pointer une parcelle »
+ * (sélection cadastre IGN) et mode « dessiner » (tracé manuel).
  *
  * ⚠️ Chargé exclusivement côté client (dynamic import, ssr: false).
  */
@@ -13,6 +14,9 @@ import {
   TileLayer,
   LayersControl,
   GeoJSON,
+  Polygon,
+  Polyline,
+  CircleMarker,
   Popup,
   useMap,
   useMapEvents,
@@ -45,12 +49,17 @@ interface Props {
   /** Géométrie en cours de confirmation (saisie manuelle) : surbrillance jaune */
   apercu: GeoJSON.Geometry | null;
   modePointage: boolean;
+  /** Mode dessin : le clic ajoute un sommet au tracé en cours */
+  modeDessin: boolean;
+  /** Sommets du tracé en cours, en [lat, lng] */
+  pointsDessin: [number, number][];
   /** Position vers laquelle recentrer la carte (clic dans le panneau latéral) */
   focus: { lat: number; lng: number } | null;
   onViewport: (bornes: BornesCarte) => void;
   onClicParcelle: (parcelle: ParcelleCarte, ctrl: boolean) => void;
   onFermerPopup: () => void;
   onClicCarte: (lat: number, lng: number) => void;
+  onClicCarteDessin: (lat: number, lng: number) => void;
   onAjouterChantier: (parcelle: ParcelleCarte) => void;
   onEditer: (parcelle: ParcelleCarte) => void;
   onSupprimer: (parcelle: ParcelleCarte) => void;
@@ -60,12 +69,18 @@ interface Props {
 function Evenements({
   onViewport,
   onClicCarte,
+  onClicCarteDessin,
   modePointage,
-}: Pick<Props, "onViewport" | "onClicCarte" | "modePointage">) {
+  modeDessin,
+}: Pick<
+  Props,
+  "onViewport" | "onClicCarte" | "onClicCarteDessin" | "modePointage" | "modeDessin"
+>) {
   const map = useMapEvents({
     moveend: () => signalerBornes(),
     click: (e) => {
       if (modePointage) onClicCarte(e.latlng.lat, e.latlng.lng);
+      else if (modeDessin) onClicCarteDessin(e.latlng.lat, e.latlng.lng);
     },
   });
 
@@ -104,15 +119,22 @@ export default function CarteParcelles(props: Props) {
     parcelleActive,
     apercu,
     modePointage,
+    modeDessin,
+    pointsDessin,
     focus,
     onViewport,
     onClicParcelle,
     onFermerPopup,
     onClicCarte,
+    onClicCarteDessin,
     onAjouterChantier,
     onEditer,
     onSupprimer,
   } = props;
+
+  // En mode pointage/dessin, les parcelles ne doivent pas intercepter le clic
+  // (sinon impossible de pointer/dessiner par-dessus une parcelle existante).
+  const modeSaisie = modePointage || modeDessin;
 
   /** Style d'un polygone : remplissage = couleur client, bordure = statut chantier. */
   function styleParcelle(p: ParcelleCarte): PathOptions {
@@ -122,11 +144,12 @@ export default function CarteParcelles(props: Props) {
       fillOpacity: selectionnee ? 0.65 : 0.35,
       color: selectionnee ? "#facc15" : COULEURS_STATUT[p.dernierStatut ?? "A_FAIRE"],
       weight: selectionnee ? 4 : 2.5,
+      interactive: !modeSaisie,
     };
   }
 
   return (
-    <div className={`h-full w-full ${modePointage ? "[&_.leaflet-container]:!cursor-crosshair" : ""}`}>
+    <div className={`h-full w-full ${modeSaisie ? "[&_.leaflet-container]:!cursor-crosshair" : ""}`}>
       <MapContainer
         center={CENTRE_DEFAUT}
         zoom={ZOOM_DEFAUT}
@@ -149,7 +172,7 @@ export default function CarteParcelles(props: Props) {
               maxZoom={19}
             />
           </LayersControl.BaseLayer>
-          {/* Cadastre en overlay semi-transparent (utile pendant la saisie) */}
+          {/* Cadastre en overlay semi-transparent (activable manuellement) */}
           <LayersControl.Overlay name={FONDS_IGN.cadastre.nom}>
             <TileLayer
               url={urlTuilesIGN(FONDS_IGN.cadastre.layer, FONDS_IGN.cadastre.format)}
@@ -160,17 +183,29 @@ export default function CarteParcelles(props: Props) {
           </LayersControl.Overlay>
         </LayersControl>
 
+        {/* En saisie : on force l'affichage du cadastre pour viser juste */}
+        {modeSaisie && (
+          <TileLayer
+            url={urlTuilesIGN(FONDS_IGN.cadastre.layer, FONDS_IGN.cadastre.format)}
+            attribution={ATTRIBUTION_IGN}
+            opacity={0.7}
+            maxZoom={19}
+          />
+        )}
+
         <Evenements
           onViewport={onViewport}
           onClicCarte={onClicCarte}
+          onClicCarteDessin={onClicCarteDessin}
           modePointage={modePointage}
+          modeDessin={modeDessin}
         />
         <Recentrage focus={focus} />
 
-        {/* Polygones des parcelles (clé = id + état pour forcer le restyle) */}
+        {/* Polygones des parcelles (clé inclut le mode pour réappliquer l'interactivité) */}
         {parcelles.map((p) => (
           <GeoJSON
-            key={`${p.id}-${p.dernierStatut}-${selectionIds.has(p.id)}-${p.client.couleur}`}
+            key={`${p.id}-${p.dernierStatut}-${selectionIds.has(p.id)}-${p.client.couleur}-${modeSaisie}`}
             data={p.geometry}
             style={() => styleParcelle(p)}
             eventHandlers={{
@@ -196,6 +231,26 @@ export default function CarteParcelles(props: Props) {
             })}
           />
         )}
+
+        {/* Tracé en cours (mode dessin) : sommets + lignes + remplissage */}
+        {modeDessin && pointsDessin.length >= 3 && (
+          <Polygon
+            positions={pointsDessin}
+            pathOptions={{ color: "#facc15", weight: 3, fillColor: "#facc15", fillOpacity: 0.35 }}
+          />
+        )}
+        {modeDessin && pointsDessin.length === 2 && (
+          <Polyline positions={pointsDessin} pathOptions={{ color: "#facc15", weight: 3 }} />
+        )}
+        {modeDessin &&
+          pointsDessin.map((pt, i) => (
+            <CircleMarker
+              key={`sommet-${i}`}
+              center={pt}
+              radius={5}
+              pathOptions={{ color: "#ca8a04", fillColor: "#facc15", fillOpacity: 1, weight: 2 }}
+            />
+          ))}
 
         {/* Popup de la parcelle cliquée */}
         {parcelleActive && (
